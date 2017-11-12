@@ -10,20 +10,7 @@ from gym import envs
 
 import tensorflow as tf
 
-
-class Memory:
-    def __init__(self, capacity):
-        self.samples = deque(maxlen=capacity)
-
-    def add(self, sample):
-        self.samples.append(sample)
-
-    def sample(self, n):
-        n = min(n, len(self.samples))
-        return random.sample(self.samples, n)
-
-
-class Agent:
+class DqnAgent:
     def __init__(self, 
                  env, 
                  brain, 
@@ -41,7 +28,7 @@ class Agent:
         self.action_size = env.action_size
         self.brain = brain
         self.memory_size = memory_size
-        self.memory = Memory(memory_size)
+        self.memory = self.Memory(memory_size)
         self.epsilon = max_epsilon
         self.steps = 0
         self.steps_since_model_update = 0
@@ -110,3 +97,14 @@ class Agent:
         if self.steps_since_model_update >= self.target_freq:
             self.steps_since_model_update = 0
             self.brain.updateTargetModel()
+
+    class Memory:
+        def __init__(self, capacity):
+            self.samples = deque(maxlen=capacity)
+
+        def add(self, sample):
+            self.samples.append(sample)
+
+        def sample(self, n):
+            n = min(n, len(self.samples))
+            return random.sample(self.samples, n)

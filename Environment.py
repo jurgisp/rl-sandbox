@@ -23,6 +23,12 @@ def find_new_path(base_path):
             if not os.path.exists(path):
                 return path
 
+def get_obj_parameter_values(obj):
+    return [
+        (a, getattr(obj,a)) 
+        for a in dir(obj) 
+        if not a.startswith('__') and (type(getattr(obj,a)) == int or type(getattr(obj,a)) == float)]
+
 class Environment:
     def __init__(self, problem, run_name=None):
         self.problem = problem
@@ -104,15 +110,16 @@ class Environment:
             (first_dQ, last_dQ) = (dQ[0], dQ[-1])
             rms_dQ = np.sqrt(np.average(np.square(dQ)))
 
-            print("{:4.0f} /{:7.0f} :: reward={:3.0f}, Q=({:5.2f}, {:5.2f}, {:5.2f}), eps={:.3f}, fps={:4.0f}".format(
-                self.episode, 
-                agent.steps, 
-                self.total_reward,
-                first_Q, 
-                avg_Q, 
-                last_Q, 
-                agent.epsilon, 
-                steps/(elapsed+0.000001)))
+            if log is None or self.episode % 100 == 1:
+                print("{:4.0f} /{:7.0f} :: reward={:3.0f}, Q=({:5.2f}, {:5.2f}, {:5.2f}), eps={:.3f}, fps={:4.0f}".format(
+                    self.episode, 
+                    agent.steps, 
+                    self.total_reward,
+                    first_Q, 
+                    avg_Q, 
+                    last_Q, 
+                    agent.epsilon, 
+                    steps/(elapsed+0.000001)))
 
             if log is not None:
                 # first row
@@ -132,11 +139,7 @@ class Environment:
                 log_metric(log, 'metrics/episodes', self.episode, agent.steps)
 
                 if self.episode == 1:
-                    log_metric(log, 'params/memory_size', agent.memory_size)
-                    log_metric(log, 'params/batch_size', agent.batch_size)
-                    log_metric(log, 'params/gamma', agent.gamma)
-                    log_metric(log, 'params/layer1_size', agent.brain.layer1_size)
-                    log_metric(log, 'params/layer2_size', agent.brain.layer2_size)
-                    log_metric(log, 'params/target_freq', agent.target_freq)
-                    log_metric(log, 'params/lr', agent.brain.opt_lr)
-            
+                    for (p, v) in get_obj_parameter_values(agent):
+                        log_metric(log, 'params/' + p, v)
+                    for (p, v) in get_obj_parameter_values(agent.brain):
+                        log_metric(log, 'params/' + p, v)
