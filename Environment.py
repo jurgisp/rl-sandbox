@@ -58,7 +58,7 @@ class Environment:
             if render:
                 self.env.render()
 
-            (action, Q) = agent.act(state)
+            (action, Qact, Q) = agent.act(state)
 
             next_state, reward, done, info = self.env.step(action)
             reward_plus = reward
@@ -67,8 +67,8 @@ class Environment:
                 if step == self.timestep_limit:
                     reward_plus += self.cutoff_reward * agent.gamma / (1 - agent.gamma)
 
-            agent.observe((state, action, reward_plus, next_state), train)
-            metrics.observe_step(step, done, reward, reward_plus, Q)
+            agent.observe((state, action, reward_plus, next_state, Q), train)
+            metrics.observe_step(step, done, reward, reward_plus, Qact)
 
             if done:
                 break

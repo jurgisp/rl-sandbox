@@ -48,10 +48,10 @@ class DqnAgent:
         action = (random.randint(0, self.env.action_size-1)
                   if random.random() < self.epsilon
                   else np.argmax(Q))
-        return (action, Q[action])
+        return (action, Q[action], Q)
 
     def observe(self, data, train):
-        #(state, action, reward_plus, next_state) = data
+        #(state, action, reward_plus, next_state, Q) = data
         self.memory.add(data)
         self.steps += 1
         if train:
