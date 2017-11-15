@@ -53,6 +53,7 @@ class Environment:
         step = 0
         agent.episode_start(train)
         metrics = self.EpisodeMetrics(self, agent, self.episode, agent.gamma)
+        data = None
 
         while True:
             step += 1
@@ -60,6 +61,11 @@ class Environment:
                 self.env.render()
 
             (action, Qact, Q) = agent.act(state)
+
+            if data is not None:
+                # Train with data from previous step, just waiting for next step to record next action
+                # data = (state, action, reward, next_state, Q, next_action)
+                agent.observe((data[0], data[1], data[2], data[3], data[4], action), train)
 
             next_state, reward, done, info = self.env.step(action)
             reward_plus = reward
@@ -72,12 +78,15 @@ class Environment:
                     # reward_plus is with all expected future-rewards if we keep running
                     reward_plus += self.cutoff_reward * agent.gamma / (1 - agent.gamma)
 
-            agent.observe((state, action, reward, next_state, Q), train)
+            data = (state, action, reward, next_state, Q, None)
             metrics.observe_step(step, done, reward, reward_plus, Qact)
 
             if done:
                 break
             state = next_state
+
+        if data is not None and data[3] is None:
+            agent.observe(data, train)
 
         if render:
             self.env.render(close=True)

@@ -19,7 +19,8 @@ class OnlineAgent:
                  max_epsilon=1.0,
                  min_epsilon=0.1,
                  epsilon_decay=0.001,
-                 gamma=0.99):
+                 gamma=0.99,
+                 sarsa=False):
 
         self.env = env
         self.state_size = env.state_size
@@ -33,6 +34,7 @@ class OnlineAgent:
         self.target_freq = target_freq
         self.train_freq  = train_freq
         self.memory = []
+        self.sarsa = sarsa
 
     def episode_start(self, train):
         self.memory = []
@@ -45,7 +47,7 @@ class OnlineAgent:
         return (action, Q[action], Q)
 
     def observe(self, data, train):
-        (state, action, reward, next_state, Q) = data
+        (state, action, reward, next_state, Q, next_action) = data
         self.memory.append(data)
         self.steps += 1
 
@@ -67,13 +69,17 @@ class OnlineAgent:
         y = np.zeros((n, self.action_size))
 
         cum_reward = 0
-        last_state = batch[-1][3]
-        if last_state is not None:
-            Q = self.brain.predictOne(last_state, target=True)
-            cum_reward = np.max(Q)
+        (state, action, reward, next_state, Q, next_action) = batch[-1]
+        if next_state is not None:
+            Q = self.brain.predictOne(next_state, target=True)
+            if self.sarsa:
+                cum_reward = Q[next_action]
+            else:
+                cum_reward = np.max(Q)
+                
         
         for i in range(n-1, -1, -1):
-            (state, action, reward, next_state, Q) = batch[i]
+            (state, action, reward, next_state, Q, next_action) = batch[i]
             target = Q
 
             cum_reward = cum_reward * self.gamma + reward
