@@ -51,7 +51,7 @@ class DqnAgent:
         return (action, Q[action], Q)
 
     def observe(self, data, train):
-        #(state, action, reward_plus, next_state, Q) = data
+        #(state, action, reward, next_state, Q) = data
         self.memory.add(data)
         self.steps += 1
         if train:

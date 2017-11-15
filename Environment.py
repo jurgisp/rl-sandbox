@@ -64,11 +64,15 @@ class Environment:
             next_state, reward, done, info = self.env.step(action)
             reward_plus = reward
             if done:
-                next_state = None
-                if step == self.timestep_limit:
+                if step < self.timestep_limit:
+                    # Actual game-over
+                    next_state = None
+                else:
+                    # Episode interrupted because of time - don't treat it as final state in Q-learning
+                    # reward_plus is with all expected future-rewards if we keep running
                     reward_plus += self.cutoff_reward * agent.gamma / (1 - agent.gamma)
 
-            agent.observe((state, action, reward_plus, next_state, Q), train)
+            agent.observe((state, action, reward, next_state, Q), train)
             metrics.observe_step(step, done, reward, reward_plus, Qact)
 
             if done:
