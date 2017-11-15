@@ -40,10 +40,11 @@ class Environment:
         self.cutoff_reward = 1 if self.env.spec.id.startswith("CartPole") else 0
 
         self.episode = 0
-        self.run_name = run_name
+        self.run_name = None
         self.log = None
         if run_name is not None:
             log_path = find_new_path(LOG_DIR + '/' + run_name)
+            self.run_name = log_path.split('/')[-1]
             self.log = tf.summary.FileWriter(log_path)
 
     def run(self, agent, render=False, train=True):
@@ -78,6 +79,7 @@ class Environment:
             self.env.render(close=True)
 
         metrics.log_episode_finish(self.log, step)
+        self.last_reward = metrics.total_reward
 
     class EpisodeMetrics:
         def __init__(self, env, agent, episode, gamma):

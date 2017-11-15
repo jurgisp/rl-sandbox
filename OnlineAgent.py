@@ -27,7 +27,6 @@ class OnlineAgent:
         self.brain = brain
         self.epsilon = max_epsilon
         self.steps = 0
-        self.steps_since_model_update = 0
         self.min_epsilon = min_epsilon
         self.epsilon_decay = epsilon_decay
         self.gamma = gamma
@@ -49,15 +48,14 @@ class OnlineAgent:
         (state, action, reward_plus, next_state, Q) = data
         self.memory.append(data)
         self.steps += 1
-        self.steps_since_model_update += 1
 
         if train:
-            if next_state is None or self.steps % self.train_freq == 0:
+            if self.steps % self.train_freq == 0 or next_state is None:
                 self._train(self.memory)
                 self.memory = []
 
-                if self.steps % self.target_freq == 0:
-                    self.brain.updateTargetModel()
+            if self.steps % self.target_freq == 0:
+                self.brain.updateTargetModel()
 
             self.epsilon = np.maximum(self.min_epsilon, self.epsilon * (1 - self.epsilon_decay))
             
