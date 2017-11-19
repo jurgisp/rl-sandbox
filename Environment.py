@@ -25,9 +25,9 @@ def find_new_path(base_path):
 
 def get_obj_parameter_values(obj):
     return [
-        (a, getattr(obj,a)) 
-        for a in dir(obj) 
-        if not a.startswith('__') and (type(getattr(obj,a)) == int or type(getattr(obj,a)) == float)]
+        (a, getattr(obj, a))
+        for a in dir(obj)
+        if not a.startswith('__') and (type(getattr(obj, a)) == int or type(getattr(obj, a)) == float)]
 
 class Environment:
     def __init__(self, problem, run_name=None):
@@ -46,6 +46,10 @@ class Environment:
             log_path = find_new_path(LOG_DIR + '/' + run_name)
             self.run_name = log_path.split('/')[-1]
             self.log = tf.summary.FileWriter(log_path)
+            self.log.close()
+
+    def close(self):
+        self.log.close()
 
     def run(self, agent, render=False, train=True):
         state = self.env.reset()
@@ -137,6 +141,8 @@ class Environment:
                     steps/(elapsed+0.000001)))
 
             if log is not None:
+                log.reopen()
+
                 # first row
                 log_metric(log, 'metrics/_Reward', self.total_reward, agent.steps)
                 log_metric(log, 'metrics/_epsilon', agent.epsilon, agent.steps)
