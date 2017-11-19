@@ -43,8 +43,10 @@ class Environment:
     _env_cache = []
     _env_lock = threading.Lock()
 
-    def __init__(self, problem, run_name=None):
+    def __init__(self, problem, repeat_steps=1, run_name=None):
         self.problem = problem
+        self.repeat_steps = repeat_steps
+
         env = gym.make(problem)
         self.state_size = env.observation_space.shape[0]
         self.action_size = env.action_space.n
@@ -84,6 +86,7 @@ class Environment:
             elapsed = time.time() - self.start_time
             with open(summary_file, "a") as f:
                 summary = {
+                    'problem': self.problem,
                     'run_name': self.run_name,
                     'episodes': self.episode.val(),
                     'steps': self.total_steps.val(),
@@ -91,6 +94,7 @@ class Environment:
                     'avg_reward': self.total_reward.val() / self.episode.val(),
                     'elapsed': elapsed,
                     'fps': self.total_steps.val() / (elapsed + 0.000001),
+                    'repeat_steps': self.repeat_steps,
                     **self.agent_parameters
                 }
                 print(json.dumps(summary), file = f)
@@ -109,7 +113,7 @@ class Environment:
             self._env_cache.append(env)
 
     def _act_random(self, state):
-        return [random.randint(0, self.action_size-1), 0, np.zeros(self.action_size)]
+        return [random.randint(0, self.action_size-1), np.zeros(self.action_size)]
 
     def run(self, agent, render=False, train=True, random=False):
         episode = self.episode.inc()
@@ -130,20 +134,23 @@ class Environment:
             if render:
                 env.render()
 
-            if random:
-                (action, Qact, Q) = self._act_random(state)
-            else:
-                (action, Qact, Q) = agent.act(state)
+            (action, Q) = agent.act(state) if not random else self._act_random(state)
 
             if data is not None:
                 # Train with data from previous step, just waiting for next step to record next action
                 # data = (state, action, reward, next_state, Q, next_action)
                 agent.observe((data[0], data[1], data[2], data[3], data[4], action), train, data_step)
 
-            next_state, reward, done, info = env.step(action)
+            reward = 0
+            for i in range(self.repeat_steps):
+                next_state, r, done, info = env.step(action)
+                reward += r
+                if done:
+                    break
+
             reward_plus = reward
             if done:
-                if step < self.timestep_limit:
+                if step < self.timestep_limit / self.repeat_steps:
                     # Actual game-over
                     next_state = None
                 else:
@@ -153,7 +160,7 @@ class Environment:
 
             data = (state, action, reward, next_state, Q, None)
             data_step = global_step
-            metrics.observe_step(step, done, reward, reward_plus, Qact)
+            metrics.observe_step(step, done, reward, reward_plus, Q[action])
 
             if done:
                 break

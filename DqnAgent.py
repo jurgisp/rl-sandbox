@@ -48,7 +48,7 @@ class DqnAgent:
         action = (random.randint(0, self.action_size-1)
                   if random.random() < self.epsilon
                   else np.argmax(Q))
-        return (action, Q[action], Q)
+        return (action, Q)
 
     def observe(self, data, train, global_step):
         # (state, action, reward, next_state, Q, next_action) = data

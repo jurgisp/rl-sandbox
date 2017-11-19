@@ -10,14 +10,6 @@ if 'CartPole-v1000' not in envs.registry.env_specs:
         reward_threshold=1000,
     )
 
-if 'MountainCar-v1000' not in envs.registry.env_specs:
-    envs.register(
-        id='MountainCar-v1000',
-        entry_point='gym.envs.classic_control:MountainCarEnv',
-        tags={'wrapper_config.TimeLimit.max_episode_steps': 1000},
-        reward_threshold=1000,
-    )
-
 if 'MountainCar-v10000' not in envs.registry.env_specs:
     envs.register(
         id='MountainCar-v10000',
