@@ -50,11 +50,12 @@ class OnlineAgent:
     def observe(self, data, train, global_step):
         (state, action, reward, next_state, Q, next_action) = data
         
-        self.memory.append(data)
         self.steps += 1
         self.epsilon = np.maximum(self.min_epsilon, self.max_epsilon * np.exp(-global_step * self.epsilon_decay))
 
         if train:
+            self.memory.append(data)
+            
             if self.steps % self.train_freq == 0 or next_state is None:
                 self._train(self.memory)
                 self.memory = []

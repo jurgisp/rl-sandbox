@@ -16,3 +16,6 @@ class LinearBrain:
     def predictOne(self, state, target=False):
         y = np.matmul(self.coeffs, state)
         return [-y, y]
+
+    def get_parameters(self):
+        return {}

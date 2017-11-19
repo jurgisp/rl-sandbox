@@ -50,8 +50,9 @@ class Environment:
         self.action_size = env.action_space.n
         self.timestep_limit = env.spec.timestep_limit
         # How much reward assume we keep getting per step if we get cutoff by timestep_limit
-        self.cutoff_reward = 1 if env.spec.id.startswith("CartPole") else 0
+        self.cutoff_reward = self._get_cutoff_reward(env)
         self._env_cache.append(env)
+        self._last_env = None
 
         self.episode = Counter()
         self.total_reward = Counter()
@@ -67,9 +68,16 @@ class Environment:
             self.log = tf.summary.FileWriter(log_path)
             self.log.close()
 
+    def _get_cutoff_reward(self, env):
+        if env.spec.id.startswith("CartPole-"): return 1
+        if env.spec.id.startswith("MountainCar-"): return -1
+        return 0
+
     def close(self):
         if self.log:
             self.log.close()
+        if self._last_env:
+            self._last_env.render(close=True)
 
     def log_summary(self, summary_file):
         if summary_file is not None and self.episode.val() > 0:
@@ -90,15 +98,20 @@ class Environment:
     def _get_available_env(self):
         with self._env_lock:
             if self._env_cache:
-                return self._env_cache.pop()
+                env = self._env_cache.pop()
             else:
-                return gym.make(self.problem)
+                env = gym.make(self.problem)
+            self._last_env = env
+            return env
     
     def _return_available_env(self, env):
         with self._env_lock:
             self._env_cache.append(env)
 
-    def run(self, agent, render=False, train=True):
+    def _act_random(self, state):
+        return [random.randint(0, self.action_size-1), 0, np.zeros(self.action_size)]
+
+    def run(self, agent, render=False, train=True, random=False):
         episode = self.episode.inc()
         step = 0
         metrics = self.EpisodeMetrics(self, agent, episode, agent.gamma)
@@ -117,7 +130,10 @@ class Environment:
             if render:
                 env.render()
 
-            (action, Qact, Q) = agent.act(state)
+            if random:
+                (action, Qact, Q) = self._act_random(state)
+            else:
+                (action, Qact, Q) = agent.act(state)
 
             if data is not None:
                 # Train with data from previous step, just waiting for next step to record next action
@@ -161,18 +177,15 @@ class Environment:
             self.gamma = gamma
 
             self.total_reward = 0
-            self.Qs = np.array([])
-            self.cum_rewards = np.array([])
+            self.Qs = []
+            self.rewards = []
             self.start_time = time.time()
             self.start_steps = env.total_steps.val()
 
         def observe_step(self, step, done, reward, reward_plus, Q):
             self.total_reward += reward
-            self.Qs = np.concatenate((self.Qs, [Q]))
-            self.cum_rewards = np.concatenate((
-                self.cum_rewards +
-                reward_plus * np.exp(np.arange(self.cum_rewards.size, 0, -1)*np.log(self.gamma)),
-                [reward_plus]))
+            self.Qs.append(Q)
+            self.rewards.append(reward_plus)
 
         def log_episode_finish(self, log, steps):
             elapsed = time.time() - self.start_time
@@ -182,7 +195,14 @@ class Environment:
             (first_Q, last_Q) = (self.Qs[0], self.Qs[-1])
             avg_Q = np.average(self.Qs)
 
-            dQ = self.cum_rewards - self.Qs
+            n = len(self.rewards)
+            cum_rewards = np.zeros(n)
+            r = 0
+            for i in range(n-1, -1, -1):
+                r = r * self.gamma + self.rewards[i]
+                cum_rewards[i] = r
+
+            dQ = cum_rewards - self.Qs
             (first_dQ, last_dQ) = (dQ[0], dQ[-1])
             rms_dQ = np.sqrt(np.average(np.square(dQ)))
 
@@ -190,7 +210,7 @@ class Environment:
             steps_diff = total_steps - self.start_steps
             fps = steps_diff/(elapsed+0.000001)
 
-            if log is None or self.episode % 100 == 1:
+            if log is None or (total_steps//1000 > self.start_steps//1000):
                 print("{:4.0f} /{:7.0f} :: reward={:3.0f}, Q=({:5.2f}, {:5.2f}, {:5.2f}), eps={:.3f}, fps={:4.0f}".format(
                     self.episode, 
                     total_steps, 
