@@ -24,10 +24,10 @@ def find_new_path(base_path):
                 return path
 
 def get_obj_parameter_values(obj):
-    return [
+    return dict([
         (a, getattr(obj, a))
         for a in dir(obj)
-        if not a.startswith('__') and (type(getattr(obj, a)) == int or type(getattr(obj, a)) == float)]
+        if not a.startswith('__') and (type(getattr(obj, a)) == int or type(getattr(obj, a)) == float)])
 
 class Environment:
     def __init__(self, problem, run_name=None):
@@ -40,6 +40,10 @@ class Environment:
         self.cutoff_reward = 1 if self.env.spec.id.startswith("CartPole") else 0
 
         self.episode = 0
+        self.total_reward = 0
+        self.total_steps = 0
+        self.start_time = time.time()
+
         self.run_name = None
         self.log = None
         if run_name is not None:
@@ -51,6 +55,22 @@ class Environment:
     def close(self):
         self.log.close()
 
+    def log_summary(self, summary_file):
+        if summary_file is not None and self.episode > 0:
+            elapsed = time.time() - self.start_time
+            with open(summary_file, "a") as f:
+                summary = {
+                    'run_name': self.run_name,
+                    'episodes': self.episode,
+                    'steps': self.total_steps,
+                    'sum_reward': self.total_reward,
+                    'avg_reward': self.total_reward / self.episode,
+                    'elapsed': elapsed,
+                    'fps': self.total_steps / (elapsed + 0.000001),
+                    **agent.get_parameters()
+                }
+                print(json.dumps(summary), file = f)
+
     def run(self, agent, render=False, train=True):
         state = self.env.reset()
         self.episode += 1
@@ -61,6 +81,7 @@ class Environment:
 
         while True:
             step += 1
+            self.total_steps += 1
             if render:
                 self.env.render()
 
@@ -97,6 +118,7 @@ class Environment:
 
         metrics.log_episode_finish(self.log, step)
         self.last_reward = metrics.total_reward
+        self.total_reward += self.last_reward
 
     class EpisodeMetrics:
         def __init__(self, env, agent, episode, gamma):
@@ -121,6 +143,7 @@ class Environment:
         def log_episode_finish(self, log, steps):
             elapsed = time.time() - self.start_time
             agent = self.agent
+            env = self.env
 
             (first_Q, last_Q) = (self.Qs[0], self.Qs[-1])
             avg_Q = np.average(self.Qs)
@@ -132,7 +155,7 @@ class Environment:
             if log is None or self.episode % 100 == 1:
                 print("{:4.0f} /{:7.0f} :: reward={:3.0f}, Q=({:5.2f}, {:5.2f}, {:5.2f}), eps={:.3f}, fps={:4.0f}".format(
                     self.episode, 
-                    agent.steps, 
+                    env.total_steps, 
                     self.total_reward,
                     first_Q, 
                     avg_Q, 
@@ -144,23 +167,21 @@ class Environment:
                 log.reopen()
 
                 # first row
-                log_metric(log, 'metrics/_Reward', self.total_reward, agent.steps)
-                log_metric(log, 'metrics/_epsilon', agent.epsilon, agent.steps)
-                log_metric(log, 'metrics/_fps', steps/elapsed, agent.steps)
+                log_metric(log, 'metrics/_Reward', self.total_reward, env.total_steps)
+                log_metric(log, 'metrics/_epsilon', agent.epsilon, env.total_steps)
+                log_metric(log, 'metrics/_fps', steps/elapsed, env.total_steps)
                 # second row
-                log_metric(log, 'metrics/Q_avg', avg_Q, agent.steps)
-                log_metric(log, 'metrics/Q_first', first_Q, agent.steps)
+                log_metric(log, 'metrics/Q_avg', avg_Q, env.total_steps)
+                log_metric(log, 'metrics/Q_first', first_Q, env.total_steps)
                 if steps < self.env.timestep_limit:
-                    log_metric(log, 'metrics/Q_last', last_Q, agent.steps)
+                    log_metric(log, 'metrics/Q_last', last_Q, env.total_steps)
                 # third row
-                log_metric(log, 'metrics/dQ_arms', rms_dQ, agent.steps)
-                log_metric(log, 'metrics/dQ_first', first_dQ, agent.steps)
-                log_metric(log, 'metrics/dQ_last', last_dQ, agent.steps)
+                log_metric(log, 'metrics/dQ_arms', rms_dQ, env.total_steps)
+                log_metric(log, 'metrics/dQ_first', first_dQ, env.total_steps)
+                log_metric(log, 'metrics/dQ_last', last_dQ, env.total_steps)
                 
-                log_metric(log, 'metrics/episodes', self.episode, agent.steps)
+                log_metric(log, 'metrics/episodes', self.episode, env.total_steps)
 
                 if self.episode == 1:
-                    for (p, v) in get_obj_parameter_values(agent):
-                        log_metric(log, 'params/' + p, v)
-                    for (p, v) in get_obj_parameter_values(agent.brain):
+                    for (p, v) in agent.get_parameters().items():
                         log_metric(log, 'params/' + p, v)

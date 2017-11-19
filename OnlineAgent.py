@@ -22,6 +22,7 @@ class OnlineAgent:
                  gamma=0.99,
                  sarsa=False):
 
+        self.parameters = ['target_freq', 'train_freq', 'epsilon_decay', 'gamma', 'sarsa']
         self.env = env
         self.state_size = env.state_size
         self.action_size = env.action_size
@@ -89,3 +90,8 @@ class OnlineAgent:
             y[i] = target
 
         self.brain.train(x, y)
+
+    def get_parameters(self):
+        agent_parameters = dict([(p, getattr(self, p)) for p in self.parameters])
+        brain_parameters = self.brain.get_parameters()
+        return {**agent_parameters, **brain_parameters}

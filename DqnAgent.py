@@ -23,6 +23,7 @@ class DqnAgent:
                  target_freq = 1000,
                  use_target = False):
 
+        self.parameters = ['memory_size', 'target_freq', 'epsilon_decay', 'gamma']
         self.env = env
         self.state_size = env.state_size
         self.action_size = env.action_size
@@ -97,6 +98,11 @@ class DqnAgent:
         if self.steps_since_model_update >= self.target_freq:
             self.steps_since_model_update = 0
             self.brain.updateTargetModel()
+
+    def get_parameters(self):
+        agent_parameters = dict([(p, getattr(self, p)) for p in self.parameters])
+        brain_parameters = self.brain.get_parameters()
+        return {**agent_parameters, **brain_parameters}
 
     class Memory:
         def __init__(self, capacity):

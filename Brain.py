@@ -5,7 +5,15 @@ from keras.layers import Dense
 from keras.optimizers import Adam, RMSprop
 
 class Brain:
-    def __init__(self, env, layer1_size=64, layer2_size=0, opt_name='Adam', opt_lr=0.001, opt_loss=keras.losses.mse):
+    def __init__(self, 
+                 env, 
+                 layer1_size=64,
+                 layer2_size=0,
+                 opt_name='Adam',
+                 opt_lr=0.001,
+                 opt_loss=keras.losses.mse):
+
+        self.parameters = ['layer1_size', 'layer2_size', 'opt_lr']
         self.state_size = env.state_size
         self.action_size = env.action_size
         self.layer1_size = layer1_size
@@ -50,4 +58,7 @@ class Brain:
 
     def updateTargetModel(self):
         self.target_model.set_weights(self.model.get_weights())
+
+    def get_parameters(self):
+        return dict([(p, getattr(self, p)) for p in self.parameters])
     
