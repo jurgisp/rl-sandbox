@@ -3,8 +3,12 @@ import keras
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.optimizers import Adam, RMSprop
+import tensorflow as tf
+import threading
 
 class Brain:
+    _lock_tf = threading.Lock()
+
     def __init__(self, 
                  env, 
                  layer1_size=64,
@@ -24,6 +28,7 @@ class Brain:
 
         self.model = self._createModel()
         self.target_model = self._createModel()
+        self.tf_graph = tf.get_default_graph()
 
     def _createModel(self):
         model = Sequential()
@@ -45,19 +50,25 @@ class Brain:
         raise NotImplementedError("Unkonown optimizer: " + opt_name)
 
     def train(self, x, y):
-        self.model.fit(x, y, batch_size=len(y), epochs=1, verbose=0)
+        with self._lock_tf:
+            with self.tf_graph.as_default(): # Hack needed when called from another thread
+                self.model.fit(x, y, batch_size=len(y), epochs=1, verbose=0)
 
     def predictBatch(self, s, target=False):
-        if target:
-            return self.target_model.predict(s)
-        else:
-            return self.model.predict(s)
+        with self._lock_tf:
+            with self.tf_graph.as_default(): # Hack needed when called from another thread
+                if target:
+                    return self.target_model.predict(s)
+                else:
+                    return self.model.predict(s)
 
     def predictOne(self, s, target=False):
         return self.predictBatch(s.reshape(1, self.state_size), target=target).flatten()
 
     def updateTargetModel(self):
-        self.target_model.set_weights(self.model.get_weights())
+        with self._lock_tf:
+            with self.tf_graph.as_default():
+                self.target_model.set_weights(self.model.get_weights())
 
     def get_parameters(self):
         return dict([(p, getattr(self, p)) for p in self.parameters])

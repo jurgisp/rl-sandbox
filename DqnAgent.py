@@ -24,7 +24,6 @@ class DqnAgent:
                  use_target = False):
 
         self.parameters = ['memory_size', 'target_freq', 'epsilon_decay', 'gamma']
-        self.env = env
         self.state_size = env.state_size
         self.action_size = env.action_size
         self.brain = brain
@@ -46,12 +45,12 @@ class DqnAgent:
 
     def act(self, state):
         Q = self.brain.predictOne(state, target=self.use_target)
-        action = (random.randint(0, self.env.action_size-1)
+        action = (random.randint(0, self.action_size-1)
                   if random.random() < self.epsilon
                   else np.argmax(Q))
         return (action, Q[action], Q)
 
-    def observe(self, data, train):
+    def observe(self, data, train, global_step):
         # (state, action, reward, next_state, Q, next_action) = data
         self.memory.add(data)
         self.steps += 1

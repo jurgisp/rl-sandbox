@@ -23,10 +23,10 @@ class OnlineAgent:
                  sarsa=False):
 
         self.parameters = ['target_freq', 'train_freq', 'epsilon_decay', 'gamma', 'sarsa']
-        self.env = env
         self.state_size = env.state_size
         self.action_size = env.action_size
         self.brain = brain
+        self.max_epsilon = max_epsilon
         self.epsilon = max_epsilon
         self.steps = 0
         self.min_epsilon = min_epsilon
@@ -42,25 +42,25 @@ class OnlineAgent:
 
     def act(self, state):
         Q = self.brain.predictOne(state)
-        action = (random.randint(0, self.env.action_size-1)
+        action = (random.randint(0, self.action_size-1)
                   if random.random() < self.epsilon
                   else np.argmax(Q))
         return (action, Q[action], Q)
 
-    def observe(self, data, train):
+    def observe(self, data, train, global_step):
         (state, action, reward, next_state, Q, next_action) = data
+        
         self.memory.append(data)
         self.steps += 1
+        self.epsilon = np.maximum(self.min_epsilon, self.max_epsilon * np.exp(-global_step * self.epsilon_decay))
 
         if train:
             if self.steps % self.train_freq == 0 or next_state is None:
                 self._train(self.memory)
                 self.memory = []
 
-            if self.steps % self.target_freq == 0:
+            if global_step % self.target_freq == 0:
                 self.brain.updateTargetModel()
-
-            self.epsilon = np.maximum(self.min_epsilon, self.epsilon * (1 - self.epsilon_decay))
             
 
     def _train(self, batch):
