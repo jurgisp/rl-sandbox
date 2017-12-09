@@ -14,13 +14,16 @@ class OnlineAgent:
     def __init__(self,
                  env,
                  brain,
+                 # Common
                  target_freq=1000,
                  train_freq=5,
                  max_epsilon=1.0,
                  min_epsilon=0.1,
                  epsilon_decay=0.001,
                  gamma=0.99,
+                 # Online
                  sarsa=False):
+
 
         self.parameters = ['target_freq', 'train_freq', 'epsilon_decay', 'gamma', 'sarsa']
         self.state_size = env.state_size
@@ -34,6 +37,7 @@ class OnlineAgent:
         self.gamma = gamma
         self.target_freq = target_freq
         self.train_freq  = train_freq
+
         self.memory = []
         self.sarsa = sarsa
 
@@ -49,7 +53,6 @@ class OnlineAgent:
 
     def observe(self, data, train, global_step):
         (state, action, reward, next_state, Q, next_action) = data
-        
         self.steps += 1
         self.epsilon = np.maximum(self.min_epsilon, self.max_epsilon * np.exp(-global_step * self.epsilon_decay))
 
