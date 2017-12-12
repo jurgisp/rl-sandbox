@@ -60,7 +60,7 @@ class DqnAgent:
         self.memory.add(data)
 
         if train:
-            if self.steps % self.train_freq == 0 or next_state is None:
+            if self.steps % self.train_freq == 0:
                 batch = self.memory.sample(self.batch_size)
                 self._train(batch)
 
@@ -106,10 +106,13 @@ class DqnAgent:
     class Memory:
         def __init__(self, capacity):
             self.samples = deque(maxlen=capacity)
+            self._next_batch = []
 
         def add(self, sample):
             self.samples.append(sample)
+            self._next_batch.append(self.samples[random.randint(0, len(self.samples)-1)])
 
         def sample(self, n):
-            n = min(n, len(self.samples))
-            return random.sample(self.samples, n)
+            res = self._next_batch
+            self._next_batch = []
+            return res

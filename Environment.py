@@ -48,6 +48,7 @@ class Environment:
         self.repeat_steps = repeat_steps
 
         env = gym.make(problem)
+        env.seed(random.randint(1, 999))
         self.state_size = env.observation_space.shape[0]
         self.action_size = env.action_space.n
         self.timestep_limit = env.spec.timestep_limit
