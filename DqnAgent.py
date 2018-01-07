@@ -76,9 +76,9 @@ class DqnAgent:
         states = np.array([ o[0] for o in batch ])
         states_ = np.array([ (no_state if o[3] is None else o[3]) for o in batch ])
         
-        p = agent.brain.predictBatch(states, target=False)
-        p_ = agent.brain.predictBatch(states_, target=False)
-        pTarget_ = agent.brain.predictBatch(states_, target=True)
+        p = self.brain.predictBatch(states, target=False)
+        p_ = self.brain.predictBatch(states_, target=False)
+        pTarget_ = self.brain.predictBatch(states_, target=True)
 
         x = np.zeros((n, self.state_size))
         y = np.zeros((n, self.action_size))
