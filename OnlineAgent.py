@@ -17,6 +17,7 @@ class OnlineAgent:
                  # Common
                  target_freq=1000,
                  train_freq=5,
+                 train_nsteps=5,
                  max_epsilon=1.0,
                  min_epsilon=0.1,
                  epsilon_decay=0.001,
@@ -25,7 +26,7 @@ class OnlineAgent:
                  sarsa=False):
 
 
-        self.parameters = ['target_freq', 'train_freq', 'epsilon_decay', 'gamma', 'sarsa']
+        self.parameters = ['target_freq', 'train_freq', 'train_nsteps', 'epsilon_decay', 'gamma', 'sarsa']
         self.state_size = env.state_size
         self.action_size = env.action_size
         self.brain = brain
@@ -37,12 +38,13 @@ class OnlineAgent:
         self.gamma = gamma
         self.target_freq = target_freq
         self.train_freq  = train_freq
+        self.train_nsteps = train_nsteps
 
         self.memory = []
         self.sarsa = sarsa
 
     def episode_start(self, train):
-        self.memory = []
+        return
 
     def act(self, state):
         Q = self.brain.predictOne(state)
@@ -59,7 +61,7 @@ class OnlineAgent:
         if train:
             self.memory.append(data)
             
-            if self.steps % self.train_freq == 0 or next_state is None:
+            if self.steps % self.train_freq == 0:
                 self._train(self.memory)
                 self.memory = []
 
@@ -74,24 +76,41 @@ class OnlineAgent:
         y = np.zeros((n, self.action_size))
 
         cum_reward = 0
-        (state, action, reward, next_state, Q, next_action) = batch[-1]
-        if next_state is not None:
-            Q = self.brain.predictOne(next_state, target=True)
-            if self.sarsa:
-                cum_reward = Q[next_action]
-            else:
-                cum_reward = np.max(Q)
-                
-        
+        last_state = np.zeros(self.state_size)
+        last_Q = np.zeros(self.action_size)
+        n_steps = 0
+
         for i in range(n-1, -1, -1):
             (state, action, reward, next_state, Q, next_action) = batch[i]
-            target = Q
+            continuous = np.array_equal(next_state, last_state) # Indicates if samples come from continued episode
+
+            if not continuous or n_steps == self.train_nsteps:
+                # Need to reinitialize target reward from prediction if:
+                #   1) Discontinuity in states (i.e. batch[i+1].state != batch[i].next_state)
+                #   2) Number of train_nsteps reached
+                n_steps = 0
+                if next_state is None:
+                    cum_reward = 0
+                else:
+                    next_Q = (last_Q 
+                        if continuous else
+                        self.brain.predictOne(next_state, target=True)
+                    )
+                    cum_reward = (next_Q[next_action]
+                        if self.sarsa else
+                        np.max(next_Q)
+                    )
 
             cum_reward = cum_reward * self.gamma + reward
+            target = np.copy(Q)
             target[action] = cum_reward
 
             x[i] = state
             y[i] = target
+
+            last_state = state
+            last_Q = Q
+            n_steps += 1
 
         self.brain.train(x, y)
 
