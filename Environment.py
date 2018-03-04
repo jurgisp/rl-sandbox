@@ -116,7 +116,7 @@ class Environment:
     def _act_random(self, state):
         return [random.randint(0, self.action_size-1), np.zeros(self.action_size)]
 
-    def run(self, agent, render=False, train=True, random=False):
+    def run(self, agent, render=False, train=True, random=False, render_delay=0):
         episode = self.episode.inc()
         step = 0
         metrics = self.EpisodeMetrics(self, agent, episode, agent.gamma)
@@ -132,8 +132,6 @@ class Environment:
         while True:
             step += 1
             global_step = self.total_steps.inc()
-            if render:
-                env.render()
 
             (action, Q) = agent.act(state) if not random else self._act_random(state)
 
@@ -146,6 +144,9 @@ class Environment:
             for i in range(self.repeat_steps):
                 next_state, r, done, info = env.step(action)
                 reward += r
+                if render:
+                    env.render()
+                    time.sleep(render_delay)
                 if done:
                     break
 
@@ -175,7 +176,7 @@ class Environment:
 
         self._return_available_env(env)
         self.total_reward.inc(metrics.total_reward)
-        metrics.log_episode_finish(self.log, step)
+        metrics.log_episode_finish(self.log, step, render or not train)
 
     class EpisodeMetrics:
         def __init__(self, env, agent, episode, gamma):
@@ -195,7 +196,7 @@ class Environment:
             self.Qs.append(Q)
             self.rewards.append(reward_plus)
 
-        def log_episode_finish(self, log, steps):
+        def log_episode_finish(self, log, steps, force_print):
             elapsed = time.time() - self.start_time
             agent = self.agent
             env = self.env
@@ -218,7 +219,7 @@ class Environment:
             steps_diff = total_steps - self.start_steps
             fps = steps_diff/(elapsed+0.000001)
 
-            if log is None or (total_steps//1000 > self.start_steps//1000):
+            if log is None or (total_steps//10000 > self.start_steps//10000) or force_print:
                 print("{:4.0f} /{:7.0f} :: reward={:3.0f}, Q=({:5.2f}, {:5.2f}, {:5.2f}), eps={:.3f}, fps={:4.0f}".format(
                     self.episode, 
                     total_steps, 
