@@ -46,10 +46,10 @@ class OnlineAgent:
     def episode_start(self, train):
         return
 
-    def act(self, state):
+    def act(self, state, explore=True):
         Q = self.brain.predictOne(state)
         action = (random.randint(0, self.action_size-1)
-                  if random.random() < self.epsilon
+                  if explore and random.random() < self.epsilon
                   else np.argmax(Q))
         return (action, Q)
 
