@@ -92,10 +92,7 @@ class OnlineAgent:
                 if next_state is None:
                     cum_reward = 0
                 else:
-                    next_Q = (last_Q 
-                        if continuous else
-                        self.brain.predictOne(next_state, target=True)
-                    )
+                    next_Q = self.brain.predictOne(next_state, target=True)
                     cum_reward = (next_Q[next_action]
                         if self.sarsa else
                         np.max(next_Q)

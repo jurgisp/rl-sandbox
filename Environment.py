@@ -234,14 +234,13 @@ class Environment:
             fps = steps_diff/(elapsed+0.000001)
 
             if log_print:
-                print("{:4.0f} /{:7.0f} :: explore={} reward={:3.0f}, Q=({:5.2f}, {:5.2f}, {:5.2f}), eps={:.3f}, fps={:4.0f}".format(
+                print("{:4.0f} /{:7.0f} :: explore={} reward1={:3.0f}, reward10={:3.0f}, reward100={:3.0f}, eps={:.3f}, fps={:4.0f}".format(
                     self.episode, 
                     total_steps,
                     explore,
                     self.total_reward,
-                    first_Q, 
-                    avg_Q, 
-                    last_Q, 
+                    np.mean(self.env.episode_rewards[-10:]),
+                    np.mean(self.env.episode_rewards[-100:]),
                     agent.epsilon, 
                     fps))
 

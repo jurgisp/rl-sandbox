@@ -15,15 +15,16 @@ class DqnAgent:
                  env, 
                  brain,
                  # Common
-                 target_freq=1000,
-                 train_freq=5,
+                 target_freq=500,
+                 train_freq=1,
                  max_epsilon=1.0,
                  min_epsilon=0.1,
-                 epsilon_decay=0.001,
+                 epsilon_decay=1/1e5,
                  gamma=0.99,
                  # DQN
                  memory_size=100000,
-                 batch_size=64):
+                 batch_size=32,
+                 double_dqn=True):
 
         self.parameters = ['target_freq', 'train_freq', 'epsilon_decay', 'gamma', 'memory_size', 'batch_size']
         self.state_size = env.state_size
@@ -41,6 +42,7 @@ class DqnAgent:
         self.memory_size = memory_size
         self.memory = self.Memory(memory_size)
         self.batch_size = batch_size
+        self.double_dqn = double_dqn
 
     def episode_start(self, train):
         return
@@ -91,7 +93,10 @@ class DqnAgent:
             if s_ is None:
                 t[a] = r
             else:
-                t[a] = r + self.gamma * pTarget_[i][ np.argmax(p_[i]) ]  # double DQN
+                if self.double_dqn:
+                    t[a] = r + self.gamma * pTarget_[i][ np.argmax(p_[i]) ]
+                else:
+                    t[a] = r + self.gamma * np.max(pTarget_[i])
 
             x[i] = s
             y[i] = t
