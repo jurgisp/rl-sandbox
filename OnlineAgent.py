@@ -75,9 +75,12 @@ class OnlineAgent:
         x = np.zeros((n, self.state_size))
         y = np.zeros((n, self.action_size))
 
+        no_state = np.zeros(self.state_size)
+        next_states = np.array([ (no_state if o[3] is None else o[3]) for o in batch ])
+        next_states_qtarget = self.brain.predictBatch(next_states, target=True)
+
         cum_reward = 0
-        last_state = np.zeros(self.state_size)
-        last_Q = np.zeros(self.action_size)
+        last_state = no_state
         n_steps = 0
 
         for i in range(n-1, -1, -1):
@@ -92,10 +95,11 @@ class OnlineAgent:
                 if next_state is None:
                     cum_reward = 0
                 else:
-                    next_Q = self.brain.predictOne(next_state, target=True)
-                    cum_reward = (next_Q[next_action]
+                    qtarget = next_states_qtarget[i]
+                    cum_reward = (
+                        qtarget[next_action]
                         if self.sarsa else
-                        np.max(next_Q)
+                        np.max(qtarget)
                     )
 
             cum_reward = cum_reward * self.gamma + reward
@@ -106,7 +110,6 @@ class OnlineAgent:
             y[i] = target
 
             last_state = state
-            last_Q = Q
             n_steps += 1
 
         self.brain.train(x, y)
