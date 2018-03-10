@@ -106,13 +106,9 @@ class DqnAgent:
     class Memory:
         def __init__(self, capacity):
             self.samples = deque(maxlen=capacity)
-            self._next_batch = []
 
         def add(self, sample):
             self.samples.append(sample)
-            self._next_batch.append(self.samples[random.randint(0, len(self.samples)-1)])
 
         def sample(self, n):
-            res = self._next_batch
-            self._next_batch = []
-            return res
+            return random.sample(self.samples, np.minimum(n, len(self.samples)))
