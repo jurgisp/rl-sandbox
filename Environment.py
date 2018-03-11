@@ -43,9 +43,10 @@ class Environment:
     _env_cache = []
     _env_lock = threading.Lock()
 
-    def __init__(self, problem, repeat_steps=1, run_name=None):
+    def __init__(self, problem, repeat_steps=1, gamma=0.99, run_name=None):
         self.problem = problem
         self.repeat_steps = repeat_steps
+        self.gamma = gamma
 
         env = gym.make(problem)
         env.seed(random.randint(1, 999))
@@ -119,21 +120,18 @@ class Environment:
 
     def run(self, 
         agent, 
-        
         train=True, # If false, will not train brain (but still gather DQN experience)
         explore=True, # If true, will use epsilon-exploration, if false will be greedy
         random=False, # If true, will act random, not according to brain
-
         log_tensorboard=False,
         log_print=True,
-
         render=False, # If true, will render
         render_delay=0 # If rendering, will put delay
         ):
 
         episode = self.episode.inc()
         step = 0
-        metrics = self.EpisodeMetrics(self, agent, episode, agent.gamma)
+        metrics = self.EpisodeMetrics(self, agent, episode, self.gamma)
         if self.agent_parameters is None:
             self.agent_parameters = agent.get_parameters()
 
@@ -141,18 +139,20 @@ class Environment:
         state = env.reset()
         agent.episode_start(train)
         data = None
-        data_step = 0
 
         while True:
             step += 1
             global_step = self.total_steps.inc()
 
-            (action, Q) = agent.act(state, explore) if not random else self._act_random(state)
+            (action, Q) = (
+                agent.act(state, global_step, explore) 
+                if not random 
+                else self._act_random(state))
 
             if data is not None:
                 # Train with data from previous step, just waiting for next step to record next action
                 # data = (state, action, reward, next_state, Q, next_action)
-                agent.observe((data[0], data[1], data[2], data[3], data[4], action), train, data_step)
+                agent.observe((data[0], data[1], data[2], data[3], data[4], action), train)
 
             reward = 0
             for i in range(self.repeat_steps):
@@ -172,10 +172,9 @@ class Environment:
                 else:
                     # Episode interrupted because of time - don't treat it as final state in Q-learning
                     # reward_plus is with all expected future-rewards if we keep running
-                    reward_plus += self.cutoff_reward * agent.gamma / (1 - agent.gamma)
+                    reward_plus += self.cutoff_reward * self.gamma / (1 - self.gamma)
 
             data = (state, action, reward, next_state, Q, None)
-            data_step = global_step
             metrics.observe_step(step, done, reward, reward_plus, Q[action])
 
             if done:
@@ -183,7 +182,7 @@ class Environment:
             state = next_state
 
         if data is not None and data[3] is None:
-            agent.observe(data, train, data_step)
+            agent.observe(data, train)
 
         if render:
             env.close()
@@ -241,7 +240,7 @@ class Environment:
                     self.total_reward,
                     np.mean(self.env.episode_rewards[-10:]),
                     np.mean(self.env.episode_rewards[-100:]),
-                    agent.epsilon, 
+                    agent.get_epsilon(total_steps), 
                     fps))
 
             if log_tensorboard and log is not None:
@@ -252,7 +251,7 @@ class Environment:
                 # first row
                 log_metric(log, prefix + '_Reward1', self.total_reward, total_steps)
                 log_metric(log, prefix + '_Reward10', np.mean(self.env.episode_rewards[-10:]), total_steps)
-                log_metric(log, prefix + '_epsilon', agent.epsilon, total_steps)                
+                log_metric(log, prefix + '_epsilon', agent.get_epsilon(total_steps), total_steps)                
                 # second row
                 log_metric(log, prefix + 'Q_avg', avg_Q, total_steps)
                 log_metric(log, prefix + 'Q_first', first_Q, total_steps)
