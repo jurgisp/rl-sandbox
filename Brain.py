@@ -56,6 +56,7 @@ class Brain:
         self.tf_graph = tf.get_default_graph()
         self.train_counter = 0 # How many steps since train
         self.target_counter = 0 # How many steps since target update
+        self.train_nsize = 1 # Set from observation, need to know how many memories to sampl
 
     def get_parameters(self):
         return dict([(p, getattr(self, p)) for p in self.parameters])
@@ -113,6 +114,7 @@ class Brain:
         """
         train_batch = []
         update_target = False
+        self.train_nsize = len(data_sequence)
 
         with self._lock_mem:
             # Lock while updating memory and counters (should be fast)
@@ -125,8 +127,8 @@ class Brain:
                 self.train_counter = 0
                 if self.use_replay:
                     # DQN version - sample experience
-                    # TODO: for n-step this will take batch_size sequences, which will be batch_size*n total steps
-                    train_batch = random.sample(self.memory, np.minimum(len(self.memory), self.batch_size))
+                    sample_size = self.batch_size // self.train_nsize
+                    train_batch = random.sample(self.memory, np.minimum(len(self.memory), sample_size))
                 else:
                     # Online version - take all experience
                     train_batch = list(self.memory)
