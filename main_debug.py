@@ -21,7 +21,7 @@ if __name__ == '__main__':
 
     agent = Agent(env, brain, min_epsilon = 0.1, epsilon_decay = 1/5e5, train_nsteps = 4)
 
-    env.run(agent, train=True, explore=False)
-    env.run(agent, train=True, explore=False)
-    env.run(agent, train=True, explore=False)
+    env.run(agent, train=True, explore=True)
+    env.run(agent, train=True, explore=True)
+    env.run(agent, train=True, explore=True)
 
