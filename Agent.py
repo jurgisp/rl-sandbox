@@ -12,23 +12,23 @@ class Agent:
     def __init__(self,
                  env,
                  brain,
-                 memory_size=1,
+                 train_nsteps=1,
                  max_epsilon=1.0,
                  min_epsilon=0.1,
                  epsilon_decay=0.001):
 
 
-        self.parameters = ['epsilon_decay']
+        self.parameters = ['epsilon_decay', 'train_nsteps']
         self.state_size = env.state_size
         self.action_size = env.action_size
         self.brain = brain
-        self.memory_size = memory_size
+        self.train_nsteps = train_nsteps
         self.max_epsilon = max_epsilon
         self.min_epsilon = min_epsilon
         self.epsilon_decay = epsilon_decay
 
         self.epsilon = max_epsilon
-        self.memory = []
+        self.memory = [] # Keeps short experience sequence of train_nsteps
 
     def get_parameters(self):
         agent_parameters = dict([(p, getattr(self, p)) for p in self.parameters])
@@ -48,12 +48,17 @@ class Agent:
                   else np.argmax(Q))
         return (action, Q)
 
-    def observe(self, data, train):
+    def observe(self, data, train, done):
+        """
+        data: (state, action, reward, next_state, Q)
+        """
         if train:
             self.memory.append(data)
-            if len(self.memory) >= self.memory_size:
-                data_batch = self.memory
+            # Experience sequence terminates when reaches train_nsteps or episode end
+            # NOTE: 'done' != 'next_state==None' - the episode could be 'done' due to time limit, then next_state!=None
+            if len(self.memory) >= self.train_nsteps or done:
+                data_sequence = self.memory
                 self.memory = []
-                self.brain.observe(data_batch)
+                self.brain.observe(data_sequence)
 
 

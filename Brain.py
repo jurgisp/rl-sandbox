@@ -1,13 +1,16 @@
 
 import numpy as np
+from collections import deque
+import threading
+import random
+
 import keras
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.optimizers import Adam, RMSprop
 import tensorflow as tf
-import threading
 
-class OnlineBrain:
+class Brain:
     _lock_tf = threading.Lock()
     _lock_mem = threading.Lock()
 
@@ -18,37 +21,47 @@ class OnlineBrain:
                  opt_name='Adam',
                  opt_lr=0.001,
                  opt_loss=keras.losses.mse,
-                 minibatch_size=32,
+                 batch_size=32,
+                 #
+                 use_replay=False, # DQN vs Online
+                 ddqn=False, # DQN but also applies to Online
                  target_freq=10000,
                  train_freq=32,                 
-                 # Online
-                 train_nsteps=1,
-                 sarsa=False):
+                 memory_size = 100000 # DQN only
+                 ):
 
-        self.parameters = ['layer1_size', 'layer2_size', 'opt_lr', 
-            'minibatch_size', 'target_freq', 'train_freq', 'train_nsteps', 'sarsa']
+        self.parameters = ['layer1_size', 'layer2_size', 'opt_lr', 'batch_size',
+            'use_replay', 'target_freq', 'train_freq', 'memory_size', 'ddqn']
+
         self.state_size = env.state_size
         self.action_size = env.action_size
         self.gamma = env.gamma
+
         self.layer1_size = layer1_size
         self.layer2_size = layer2_size
         self.opt_name = opt_name
         self.opt_lr = opt_lr
         self.opt_loss = opt_loss
-        self.minibatch_size = minibatch_size
+        self.batch_size = batch_size
+
+        self.use_replay = use_replay
+        self.ddqn = ddqn
         self.target_freq = target_freq
         self.train_freq  = train_freq
-        self.train_nsteps = train_nsteps
-        self.sarsa = sarsa
+        self.memory_size = memory_size
 
         self.model = self._createModel()
         self.target_model = self._createModel()
+        self.memory = self._initMemory()
         self.tf_graph = tf.get_default_graph()
-        self.memory = []
-        self.target_update_counter = 0
+        self.train_counter = 0 # How many steps since train
+        self.target_counter = 0 # How many steps since target update
 
     def get_parameters(self):
         return dict([(p, getattr(self, p)) for p in self.parameters])
+
+    def _initMemory(self):
+        return deque(maxlen=self.memory_size)
 
     def _createModel(self):
         model = Sequential()
@@ -72,7 +85,10 @@ class OnlineBrain:
     def _fit(self, x, y):
         with self._lock_tf:
             with self.tf_graph.as_default(): # Hack needed when called from another thread
-                self.model.fit(x, y, batch_size=self.minibatch_size, epochs=1, verbose=0)
+                batch_size = self.batch_size
+                if len(y) < 2*batch_size:
+                    batch_size = len(y) # Still treat it as 1 batch if slightly above
+                self.model.fit(x, y, batch_size=batch_size, epochs=1, verbose=0)
 
     def _predictBatch(self, s, target=False):
         with self._lock_tf:
@@ -90,69 +106,114 @@ class OnlineBrain:
     def predict(self, s, target=False):
         return self._predictBatch(s.reshape(1, self.state_size), target=target).flatten()
 
-    def observe(self, data_batch):
+    def observe(self, data_sequence):
+        """
+        data_sequence: [(state, action, reward, next_state, Q), ...]
+            Consecutive sequence of steps for n-step training
+        """
         train_batch = []
         update_target = False
 
         with self._lock_mem:
-            self.memory.extend(data_batch)
+            # Lock while updating memory and counters (should be fast)
+            self.memory.append(data_sequence)
+            self.train_counter += len(data_sequence)
+            self.target_counter += len(data_sequence)
 
-            if len(self.memory) >= self.train_freq:                
-                train_batch = self.memory
-                self.memory = []
+            # Time to train?
+            if self.train_counter >= self.train_freq:
+                self.train_counter = 0
+                if self.use_replay:
+                    # DQN version - sample experience
+                    # TODO: for n-step this will take batch_size sequences, which will be batch_size*n total steps
+                    train_batch = random.sample(self.memory, np.minimum(len(self.memory), self.batch_size))
+                else:
+                    # Online version - take all experience
+                    train_batch = list(self.memory)
+                    self.memory = self._initMemory()
 
-                self.target_update_counter += len(train_batch)
-                if self.target_update_counter >= self.target_freq:
-                    self.target_update_counter = 0
-                    update_target = True
+            # Time to update target?
+            if self.target_counter >= self.target_freq:
+                self.target_counter = 0
+                update_target = True
 
+        # Train
         if len(train_batch) > 0:
             self._train(train_batch)
 
+        # Target update
         if update_target:
             self._updateTargetModel()
 
-    def _train(self, batch):
+    def _train(self, batch_sequences):
+        """
+        batch_sequences:
+            List of sequences of consecutive N (or less) steps
+            [
+                [(state, action, reward, next_state, Q), ..., (step n)]
+                [... sequence 2 ...]
+                ...
+                [... sequence M ...]
+            ]
+        """
 
+        batch = np.concatenate(batch_sequences)
         n = len(batch)
-        x = np.zeros((n, self.state_size))
-        y = np.zeros((n, self.action_size))
+
+        # Mark where are endpoints of sequences
+        is_sequence_end = np.array([False for _ in range(n)])
+        i = 0
+        for seq in batch_sequences:
+            i += len(seq)
+            is_sequence_end[i-1] = True
 
         no_state = np.zeros(self.state_size)
+        states = np.array([ o[0] for o in batch ])
         next_states = np.array([ (no_state if o[3] is None else o[3]) for o in batch ])
+
+        states_q = np.array([ o[4] for o in batch ])
+        if self.use_replay:
+            # If replaying from experience, re-predict Q, otherwise take as it was
+            states_q = self._predictBatch(states, target=False)
+        
+        next_states_q = None
+        if self.ddqn:
+            # For double-DQN we also need 
+            next_states_q = self._predictBatch(next_states, target=False)
+
         next_states_qtarget = self._predictBatch(next_states, target=True)
 
+        # Build x and y
+
+        x = np.zeros((n, self.state_size))
+        y = np.zeros((n, self.action_size))
         cum_reward = 0
-        last_state = no_state
-        n_steps = 0
 
         for i in range(n-1, -1, -1):
-            (state, action, reward, next_state, Q, next_action) = batch[i]
-            continuous = np.array_equal(next_state, last_state) # Indicates if samples come from continued episode
+            (state, action, reward, next_state, _) = batch[i]
 
-            if not continuous or n_steps == self.train_nsteps:
+            if is_sequence_end[i] or action != np.argmax(states_q[i]):
                 # Need to reinitialize target reward from prediction if:
-                #   1) Discontinuity in states (i.e. batch[i+1].state != batch[i].next_state)
-                #   2) Number of train_nsteps reached
-                n_steps = 0
+                #   1) End of sequence
+                #   2) The action taken wasn't according to Q (because of epsilon, or experience replay)
                 if next_state is None:
                     cum_reward = 0
                 else:
                     qtarget = next_states_qtarget[i]
-                    cum_reward = (
-                        qtarget[next_action]
-                        if self.sarsa else
-                        np.max(qtarget)
-                    )
+                    if self.ddqn:
+                        cum_reward = qtarget[ np.argmax(next_states_q[i]) ]
+                    else:
+                        cum_reward = np.max(qtarget)
+            else:
+                # DEBUG
+                if i < n-1 and not np.array_equal(next_states[i], states[i+1]):
+                    raise Exception('Expecting consecutive states')
 
             cum_reward = cum_reward * self.gamma + reward
-            target = np.copy(Q)
+            target = np.copy(states_q[i])
             target[action] = cum_reward
 
             x[i] = state
             y[i] = target
-
-            last_state = state
-            n_steps += 1
 
         self._fit(x, y)

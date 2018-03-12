@@ -12,6 +12,9 @@ from gym import envs
 
 import tensorflow as tf
 
+# TODO: how to define LOG_DIR so that it's global?
+#LOG_DIR = None
+
 def log_metric(log, name, value, step=0):
     summary = tf.Summary(value=[tf.Summary.Value(tag=name, simple_value=value)])
     log.add_summary(summary, global_step=step)
@@ -66,7 +69,7 @@ class Environment:
 
         self.run_name = None
         self.log = None
-        if run_name is not None:
+        if run_name is not None and LOG_DIR is not None:
             log_path = find_new_path(LOG_DIR + '/' + run_name)
             self.run_name = log_path.split('/')[-1]
             self.log = tf.summary.FileWriter(log_path)
@@ -138,9 +141,9 @@ class Environment:
         env = self._get_available_env()
         state = env.reset()
         agent.episode_start(train)
-        data = None
+        done = False
 
-        while True:
+        while not done:
             step += 1
             global_step = self.total_steps.inc()
 
@@ -149,14 +152,9 @@ class Environment:
                 if not random 
                 else self._act_random(state))
 
-            if data is not None:
-                # Train with data from previous step, just waiting for next step to record next action
-                # data = (state, action, reward, next_state, Q, next_action)
-                agent.observe((data[0], data[1], data[2], data[3], data[4], action), train)
-
             reward = 0
-            for i in range(self.repeat_steps):
-                next_state, r, done, info = env.step(action)
+            for _ in range(self.repeat_steps):
+                next_state, r, done, _ = env.step(action)
                 reward += r
                 if render:
                     env.render()
@@ -174,15 +172,10 @@ class Environment:
                     # reward_plus is with all expected future-rewards if we keep running
                     reward_plus += self.cutoff_reward * self.gamma / (1 - self.gamma)
 
-            data = (state, action, reward, next_state, Q, None)
+            agent.observe((state, action, reward, next_state, Q), train, done)
             metrics.observe_step(step, done, reward, reward_plus, Q[action])
 
-            if done:
-                break
             state = next_state
-
-        if data is not None and data[3] is None:
-            agent.observe(data, train)
 
         if render:
             env.close()
