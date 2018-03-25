@@ -119,7 +119,7 @@ class Environment:
             self._env_cache.append(env)
 
     def _act_random(self, state):
-        return [random.randint(0, self.action_size-1), np.zeros(self.action_size)]
+        return (random.randint(0, self.action_size-1), 0, None)
 
     def run(self, 
         agent, 
@@ -147,7 +147,7 @@ class Environment:
             step += 1
             global_step = self.total_steps.inc()
 
-            (action, Q) = (
+            [action, value, info] = (
                 agent.act(state, global_step, explore) 
                 if not random 
                 else self._act_random(state))
@@ -172,8 +172,8 @@ class Environment:
                     # reward_plus is with all expected future-rewards if we keep running
                     reward_plus += self.cutoff_reward * self.gamma / (1 - self.gamma)
 
-            agent.observe((state, action, reward, next_state, Q), train, done)
-            metrics.observe_step(step, done, reward, reward_plus, Q[action])
+            agent.observe([state, action, reward, next_state, info], train, done)
+            metrics.observe_step(step, done, reward, reward_plus, value)
 
             state = next_state
 

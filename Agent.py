@@ -45,11 +45,11 @@ class Agent:
         action = (random.randint(0, self.action_size-1)
                   if explore and random.random() < self.get_epsilon(global_step)
                   else np.argmax(Q))
-        return (action, Q)
+        return [action, Q[action], Q]
 
     def observe(self, data, train, done):
         """
-        data: (state, action, reward, next_state, Q)
+        data: [state, action, reward, next_state, Q]
         """
         if train:
             self.memory.append(data)
