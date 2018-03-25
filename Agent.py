@@ -27,7 +27,6 @@ class Agent:
         self.min_epsilon = min_epsilon
         self.epsilon_decay = epsilon_decay
 
-        self.epsilon = max_epsilon
         self.memory = [] # Keeps short experience sequence of train_nsteps
 
     def get_parameters(self):

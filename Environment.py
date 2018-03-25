@@ -182,7 +182,7 @@ class Environment:
 
         self._return_available_env(env)
         self.episode_rewards.append(metrics.total_reward)
-        metrics.log_episode_finish(self.log, step, explore, log_tensorboard, log_print)
+        metrics.log_episode_finish(self.log, step, next_state is not None, explore, log_tensorboard, log_print)
 
     class EpisodeMetrics:
         def __init__(self, env, agent, episode, gamma):
@@ -202,7 +202,7 @@ class Environment:
             self.Qs.append(Q)
             self.rewards.append(reward_plus)
 
-        def log_episode_finish(self, log, steps, explore, log_tensorboard, log_print):
+        def log_episode_finish(self, log, steps, is_timestep_limit, explore, log_tensorboard, log_print):
             elapsed = time.time() - self.start_time
             agent = self.agent
             env = self.env
@@ -226,10 +226,10 @@ class Environment:
             fps = steps_diff/(elapsed+0.000001)
 
             if log_print:
-                print("{:4.0f} /{:7.0f} :: explore={} reward1={:3.0f}, reward10={:3.0f}, reward100={:3.0f}, eps={:.3f}, fps={:4.0f}".format(
+                print("{:4.0f} /{:7.0f} :: time_limit={} reward1={:3.0f}, reward10={:3.0f}, reward100={:3.0f}, eps={:.3f}, fps={:4.0f}".format(
                     self.episode, 
                     total_steps,
-                    explore,
+                    is_timestep_limit,
                     self.total_reward,
                     np.mean(self.env.episode_rewards[-10:]),
                     np.mean(self.env.episode_rewards[-100:]),
