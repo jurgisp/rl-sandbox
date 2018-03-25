@@ -147,7 +147,7 @@ class Environment:
             step += 1
             global_step = self.total_steps.inc()
 
-            [action, value, info] = (
+            [action, value, eps, info] = (
                 agent.act(state, global_step, explore) 
                 if not random 
                 else self._act_random(state))
@@ -173,7 +173,7 @@ class Environment:
                     reward_plus += self.cutoff_reward * self.gamma / (1 - self.gamma)
 
             agent.observe([state, action, reward, next_state, info], train, done)
-            metrics.observe_step(step, done, reward, reward_plus, value)
+            metrics.observe_step(step, done, reward, reward_plus, value, eps)
 
             state = next_state
 
@@ -194,13 +194,15 @@ class Environment:
             self.total_reward = 0
             self.Qs = []
             self.rewards = []
+            self.epsilons = []
             self.start_time = time.time()
             self.start_steps = env.total_steps.val()
 
-        def observe_step(self, step, done, reward, reward_plus, Q):
+        def observe_step(self, step, done, reward, reward_plus, Q, eps):
             self.total_reward += reward
             self.Qs.append(Q)
             self.rewards.append(reward_plus)
+            self.epsilons.append(eps)
 
         def log_episode_finish(self, log, steps, is_timestep_limit, explore, log_tensorboard, log_print):
             elapsed = time.time() - self.start_time
@@ -233,7 +235,7 @@ class Environment:
                     self.total_reward,
                     np.mean(self.env.episode_rewards[-10:]),
                     np.mean(self.env.episode_rewards[-100:]),
-                    agent.get_epsilon(total_steps), 
+                    np.mean(self.epsilons), 
                     fps))
 
             if log_tensorboard and log is not None:
@@ -244,7 +246,7 @@ class Environment:
                 # first row
                 log_metric(log, prefix + '_Reward1', self.total_reward, total_steps)
                 log_metric(log, prefix + '_Reward10', np.mean(self.env.episode_rewards[-10:]), total_steps)
-                log_metric(log, prefix + '_epsilon', agent.get_epsilon(total_steps), total_steps)                
+                log_metric(log, prefix + '_epsilon', np.mean(self.epsilons), total_steps)                
                 # second row
                 log_metric(log, prefix + 'Q_avg', avg_Q, total_steps)
                 log_metric(log, prefix + 'Q_first', first_Q, total_steps)

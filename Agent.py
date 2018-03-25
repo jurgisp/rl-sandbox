@@ -34,7 +34,7 @@ class Agent:
         brain_parameters = self.brain.get_parameters()
         return {**agent_parameters, **brain_parameters}
 
-    def get_epsilon(self, step):
+    def _get_epsilon(self, step):
         return np.maximum(self.min_epsilon, self.max_epsilon * np.exp(-step * self.epsilon_decay))
 
     def episode_start(self, train):
@@ -42,10 +42,11 @@ class Agent:
 
     def act(self, state, global_step, explore):
         Q = self.brain.predict(state)
+        eps = self._get_epsilon(global_step)
         action = (random.randint(0, self.action_size-1)
-                  if explore and random.random() < self.get_epsilon(global_step)
+                  if explore and random.random() < eps
                   else np.argmax(Q))
-        return [action, Q[action], Q]
+        return [action, Q[action], eps, Q]
 
     def observe(self, data, train, done):
         """

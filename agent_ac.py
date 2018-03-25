@@ -31,14 +31,11 @@ class AgentAC:
         self.memory = []
         return
 
-    def get_epsilon(self, step):
-        return 0. # N/A
-
     def act(self, state, global_step, explore):
         p_action = self.brain.predict_action(state)
         v = self.brain.predict_value(state)
         action = np.random.choice(self.action_size, p=p_action)
-        return [action, v, [v, p_action]]
+        return [action, v, 1 - p_action[action], [v, p_action]]
 
     def observe(self, data, train, done):
         """
