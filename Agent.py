@@ -17,7 +17,6 @@ class Agent:
                  min_epsilon=0.1,
                  epsilon_decay=0.001):
 
-
         self.parameters = ['epsilon_decay', 'train_nsteps']
         self.state_size = env.state_size
         self.action_size = env.action_size

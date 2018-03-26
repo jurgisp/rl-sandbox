@@ -8,6 +8,7 @@ import keras
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.optimizers import Adam, RMSprop
+from keras.backend.common import floatx, epsilon
 import tensorflow as tf
 
 class BrainAC:
@@ -24,11 +25,12 @@ class BrainAC:
                  #
                  use_replay=False, # DQN vs Online
                  train_freq=32,                 
-                 memory_size = 100000 # DQN only
+                 memory_size = 100000, # DQN only
+                 entropy_beta=0.1
                  ):
 
         self.parameters = ['layer1_size', 'layer2_size', 'opt_lr', 'batch_size',
-            'use_replay', 'train_freq', 'memory_size']
+            'use_replay', 'train_freq', 'memory_size', 'entropy_beta']
 
         self.state_size = env.state_size
         self.action_size = env.action_size
@@ -43,8 +45,9 @@ class BrainAC:
         self.use_replay = use_replay
         self.train_freq  = train_freq
         self.memory_size = memory_size
+        self.entropy_beta = entropy_beta
 
-        self.policy_model = self._createPolicyModel()
+        self.policy_model = self._createPolicyModel(self.entropy_beta)
         self.value_model = self._createValueModel()
         self.memory = self._initMemory()
         self.tf_graph = tf.get_default_graph()
@@ -57,7 +60,29 @@ class BrainAC:
     def _initMemory(self):
         return deque(maxlen=self.memory_size)
 
-    def _createPolicyModel(self):
+    def _createPolicyModel(self, entropy_beta):
+
+        def categorical_crossentropy_regularized(target, output):
+            """Categorical crossentropy between an output tensor and a target tensor.
+            # Arguments
+                target: A tensor of the same shape as `output`.
+                output: A tensor resulting from a softmax
+                    (unless `from_logits` is True, in which
+                    case `output` is expected to be the logits).
+            # Returns
+                Output tensor.
+            """
+            # scale preds so that the class probas of each sample sum to 1
+            output /= tf.reduce_sum(output,
+                                    len(output.get_shape()) - 1,
+                                    True)
+            # manual computation of crossentropy
+            _epsilon = tf.convert_to_tensor(epsilon(), dtype=output.dtype.base_dtype)
+            output = tf.clip_by_value(output, _epsilon, 1. - _epsilon)
+            return - tf.reduce_sum(target * tf.log(output)
+                                - entropy_beta * output * tf.log(output),
+                                    len(output.get_shape()) - 1)
+
         model = Sequential()
 
         model.add(Dense(self.layer1_size, activation='relu', input_dim=self.state_size))
@@ -66,7 +91,7 @@ class BrainAC:
         model.add(Dense(self.action_size, activation='softmax'))
 
         optimizer = self._createOptimizer(self.opt_name, self.opt_lr)
-        model.compile(loss='categorical_crossentropy', optimizer=optimizer)
+        model.compile(loss=categorical_crossentropy_regularized, optimizer=optimizer)
         return model
 
     def _createValueModel(self):
