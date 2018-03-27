@@ -8,13 +8,13 @@ import os
 import gym
 from gym import envs
 
-class Agent:
+class AgentACQ:
     def __init__(self,
                  env,
                  brain,
                  train_nsteps=1,
-                 max_epsilon=1.0,
-                 min_epsilon=0.1,
+                 max_epsilon=0.0,
+                 min_epsilon=0.0,
                  epsilon_decay=0.001):
 
         self.parameters = ['epsilon_decay', 'train_nsteps']
@@ -41,16 +41,17 @@ class Agent:
         return
 
     def act(self, state, global_step, explore):
-        q = self.brain.predict(state)
+        p_action = self.brain.predict_action(state)
+        q = self.brain.predict_value(state)
         eps = self._get_epsilon(global_step)
-        action = np.argmax(q)
+        action = np.random.choice(self.action_size, p=p_action)
         if explore and random.random() < eps:
             action = random.randint(0, self.action_size-1)
-        return [action, q[action], eps, q]
+        return [action, q[action], 1 - p_action[action], [q, p_action]]
 
     def observe(self, data, train, done):
         """
-        data: [state, action, reward, next_state, q]
+        data: [state, action, reward, next_state, [q, p_act]]
         """
         if train:
             self.memory.append(data)
