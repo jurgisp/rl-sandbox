@@ -4,11 +4,16 @@ import random
 from collections import deque
 import numpy as np
 import os
+import threading
+import json
 
 import gym
 from gym import envs
 
 import tensorflow as tf
+
+# TODO: how to define LOG_DIR so that it's global?
+#LOG_DIR = None
 
 def log_metric(log, name, value, step=0):
     summary = tf.Summary(value=[tf.Summary.Value(tag=name, simple_value=value)])
@@ -23,102 +28,161 @@ def find_new_path(base_path):
             if not os.path.exists(path):
                 return path
 
-def get_obj_parameter_values(obj):
-    return dict([
-        (a, getattr(obj, a))
-        for a in dir(obj)
-        if not a.startswith('__') and (type(getattr(obj, a)) == int or type(getattr(obj, a)) == float)])
+class Counter(object):
+    def __init__(self, value=0):
+        self.v = value
+        self.lock = threading.Lock()
+
+    def inc(self, step=1):
+        with self.lock:
+            self.v += step
+            return self.v
+
+    def val(self):
+        with self.lock:
+            return self.v
 
 class Environment:
-    def __init__(self, problem, run_name=None):
-        self.problem = problem
-        self.env = gym.make(problem)
-        self.state_size = self.env.observation_space.shape[0]
-        self.action_size = self.env.action_space.n
-        self.timestep_limit = self.env.spec.timestep_limit
-        # How much reward assume we keep getting per step if we get cutoff by timestep_limit
-        self.cutoff_reward = 1 if self.env.spec.id.startswith("CartPole") else 0
+    _env_cache = []
+    _env_lock = threading.Lock()
 
-        self.episode = 0
-        self.total_reward = 0
-        self.total_steps = 0
+    def __init__(self, problem, repeat_steps=1, gamma=0.99, run_name=None):
+        self.problem = problem
+        self.repeat_steps = repeat_steps
+        self.gamma = gamma
+
+        env = gym.make(problem)
+        env.seed(random.randint(1, 999))
+        self.state_size = env.observation_space.shape[0]
+        self.action_size = env.action_space.n
+        self.timestep_limit = env.spec.timestep_limit
+        # How much reward assume we keep getting per step if we get cutoff by timestep_limit
+        self.cutoff_reward = self._get_cutoff_reward(env) * repeat_steps
+        self._env_cache.append(env)
+        self._last_env = None
+
+        self.episode = Counter()
+        self.episode_rewards = []
+        self.total_steps = Counter()
         self.start_time = time.time()
+        self.agent_parameters = None
 
         self.run_name = None
         self.log = None
-        if run_name is not None:
+        if run_name is not None and LOG_DIR is not None:
             log_path = find_new_path(LOG_DIR + '/' + run_name)
             self.run_name = log_path.split('/')[-1]
             self.log = tf.summary.FileWriter(log_path)
             self.log.close()
 
+    def _get_cutoff_reward(self, env):
+        if env.spec.id.startswith("CartPole-"): return 1
+        if env.spec.id.startswith("MountainCar-"): return -1
+        return 0
+
     def close(self):
-        self.log.close()
+        if self.log:
+            self.log.close()
+        if self._last_env:
+            self._last_env.close()
 
     def log_summary(self, summary_file):
-        if summary_file is not None and self.episode > 0:
+        if summary_file is not None and self.episode.val() > 0:
             elapsed = time.time() - self.start_time
             with open(summary_file, "a") as f:
                 summary = {
+                    'problem': self.problem,
                     'run_name': self.run_name,
-                    'episodes': self.episode,
-                    'steps': self.total_steps,
-                    'sum_reward': self.total_reward,
-                    'avg_reward': self.total_reward / self.episode,
+                    'episodes': self.episode.val(),
+                    'steps': self.total_steps.val(),
+                    'sum_reward': np.sum(self.episode_rewards),
+                    'avg_reward': np.mean(self.episode_rewards),
+                    'avg_reward_last100': np.mean(self.episode_rewards[-100:]),
                     'elapsed': elapsed,
-                    'fps': self.total_steps / (elapsed + 0.000001),
-                    **agent.get_parameters()
+                    'fps': self.total_steps.val() / (elapsed + 0.000001),
+                    'repeat_steps': self.repeat_steps,
+                    **self.agent_parameters
                 }
                 print(json.dumps(summary), file = f)
 
-    def run(self, agent, render=False, train=True):
-        state = self.env.reset()
-        self.episode += 1
+    def _get_available_env(self):
+        with self._env_lock:
+            if self._env_cache:
+                env = self._env_cache.pop()
+            else:
+                env = gym.make(self.problem)
+            self._last_env = env
+            return env
+    
+    def _return_available_env(self, env):
+        with self._env_lock:
+            self._env_cache.append(env)
+
+    def _act_random(self, state):
+        return (random.randint(0, self.action_size-1), 0, None)
+
+    def run(self, 
+        agent, 
+        train=True, # If false, will not train brain (but still gather DQN experience)
+        explore=True, # If true, will use epsilon-exploration, if false will be greedy
+        random=False, # If true, will act random, not according to brain
+        log_tensorboard=False,
+        log_print=True,
+        render=False, # If true, will render
+        render_delay=0 # If rendering, will put delay
+        ):
+
+        episode = self.episode.inc()
         step = 0
+        metrics = self.EpisodeMetrics(self, agent, episode, self.gamma)
+        if self.agent_parameters is None:
+            self.agent_parameters = agent.get_parameters()
+
+        env = self._get_available_env()
+        state = env.reset()
         agent.episode_start(train)
-        metrics = self.EpisodeMetrics(self, agent, self.episode, agent.gamma)
-        data = None
+        done = False
 
-        while True:
+        while not done:
             step += 1
-            self.total_steps += 1
-            if render:
-                self.env.render()
+            global_step = self.total_steps.inc()
 
-            (action, Qact, Q) = agent.act(state)
+            [action, value, eps, info] = (
+                agent.act(state, global_step, explore) 
+                if not random 
+                else self._act_random(state))
 
-            if data is not None:
-                # Train with data from previous step, just waiting for next step to record next action
-                # data = (state, action, reward, next_state, Q, next_action)
-                agent.observe((data[0], data[1], data[2], data[3], data[4], action), train)
+            reward = 0
+            for _ in range(self.repeat_steps):
+                next_state, r, done, _ = env.step(action)
+                reward += r
+                if render:
+                    env.render()
+                    time.sleep(render_delay)
+                if done:
+                    break
 
-            next_state, reward, done, info = self.env.step(action)
             reward_plus = reward
             if done:
-                if step < self.timestep_limit:
+                if step < self.timestep_limit / self.repeat_steps:
                     # Actual game-over
                     next_state = None
                 else:
                     # Episode interrupted because of time - don't treat it as final state in Q-learning
                     # reward_plus is with all expected future-rewards if we keep running
-                    reward_plus += self.cutoff_reward * agent.gamma / (1 - agent.gamma)
+                    reward_plus += self.cutoff_reward * self.gamma / (1 - self.gamma)
 
-            data = (state, action, reward, next_state, Q, None)
-            metrics.observe_step(step, done, reward, reward_plus, Qact)
+            agent.observe([state, action, reward, next_state, info], train, done)
+            metrics.observe_step(step, done, reward, reward_plus, value, eps)
 
-            if done:
-                break
             state = next_state
 
-        if data is not None and data[3] is None:
-            agent.observe(data, train)
-
         if render:
-            self.env.render(close=True)
+            env.close()
 
-        metrics.log_episode_finish(self.log, step)
-        self.last_reward = metrics.total_reward
-        self.total_reward += self.last_reward
+        self._return_available_env(env)
+        self.episode_rewards.append(metrics.total_reward)
+        metrics.log_episode_finish(self.log, step, next_state is not None, explore, log_tensorboard, log_print)
 
     class EpisodeMetrics:
         def __init__(self, env, agent, episode, gamma):
@@ -128,19 +192,19 @@ class Environment:
             self.gamma = gamma
 
             self.total_reward = 0
-            self.Qs = np.array([])
-            self.cum_rewards = np.array([])
+            self.Qs = []
+            self.rewards = []
+            self.epsilons = []
             self.start_time = time.time()
+            self.start_steps = env.total_steps.val()
 
-        def observe_step(self, step, done, reward, reward_plus, Q):
+        def observe_step(self, step, done, reward, reward_plus, Q, eps):
             self.total_reward += reward
-            self.Qs = np.concatenate((self.Qs, [Q]))
-            self.cum_rewards = np.concatenate((
-                self.cum_rewards +
-                reward_plus * np.exp(np.arange(self.cum_rewards.size, 0, -1)*np.log(self.gamma)),
-                [reward_plus]))
+            self.Qs.append(Q)
+            self.rewards.append(reward_plus)
+            self.epsilons.append(eps)
 
-        def log_episode_finish(self, log, steps):
+        def log_episode_finish(self, log, steps, is_timestep_limit, explore, log_tensorboard, log_print):
             elapsed = time.time() - self.start_time
             agent = self.agent
             env = self.env
@@ -148,39 +212,53 @@ class Environment:
             (first_Q, last_Q) = (self.Qs[0], self.Qs[-1])
             avg_Q = np.average(self.Qs)
 
-            dQ = self.cum_rewards - self.Qs
+            n = len(self.rewards)
+            cum_rewards = np.zeros(n)
+            r = 0
+            for i in range(n-1, -1, -1):
+                r = r * self.gamma + self.rewards[i]
+                cum_rewards[i] = r
+
+            dQ = cum_rewards - self.Qs
             (first_dQ, last_dQ) = (dQ[0], dQ[-1])
             rms_dQ = np.sqrt(np.average(np.square(dQ)))
 
-            if log is None or self.episode % 100 == 1:
-                print("{:4.0f} /{:7.0f} :: reward={:3.0f}, Q=({:5.2f}, {:5.2f}, {:5.2f}), eps={:.3f}, fps={:4.0f}".format(
-                    self.episode, 
-                    env.total_steps, 
-                    self.total_reward,
-                    first_Q, 
-                    avg_Q, 
-                    last_Q, 
-                    agent.epsilon, 
-                    steps/(elapsed+0.000001)))
+            total_steps = env.total_steps.val()
+            steps_diff = total_steps - self.start_steps
+            fps = steps_diff/(elapsed+0.000001)
 
-            if log is not None:
+            if log_print:
+                print("{:4.0f} /{:7.0f} :: time_limit={} reward1={:3.0f}, reward10={:3.0f}, reward100={:3.0f}, eps={:.3f}, fps={:4.0f}".format(
+                    self.episode, 
+                    total_steps,
+                    is_timestep_limit,
+                    self.total_reward,
+                    np.mean(self.env.episode_rewards[-10:]),
+                    np.mean(self.env.episode_rewards[-100:]),
+                    np.mean(self.epsilons), 
+                    fps))
+
+            if log_tensorboard and log is not None:
                 log.reopen()
 
-                # first row
-                log_metric(log, 'metrics/_Reward', self.total_reward, env.total_steps)
-                log_metric(log, 'metrics/_epsilon', agent.epsilon, env.total_steps)
-                log_metric(log, 'metrics/_fps', steps/elapsed, env.total_steps)
-                # second row
-                log_metric(log, 'metrics/Q_avg', avg_Q, env.total_steps)
-                log_metric(log, 'metrics/Q_first', first_Q, env.total_steps)
-                if steps < self.env.timestep_limit:
-                    log_metric(log, 'metrics/Q_last', last_Q, env.total_steps)
-                # third row
-                log_metric(log, 'metrics/dQ_arms', rms_dQ, env.total_steps)
-                log_metric(log, 'metrics/dQ_first', first_dQ, env.total_steps)
-                log_metric(log, 'metrics/dQ_last', last_dQ, env.total_steps)
+                prefix = 'metrics/' if explore else 'metrics_test/'
                 
-                log_metric(log, 'metrics/episodes', self.episode, env.total_steps)
+                # first row
+                log_metric(log, prefix + '_Reward1', self.total_reward, total_steps)
+                log_metric(log, prefix + '_Reward10', np.mean(self.env.episode_rewards[-10:]), total_steps)
+                log_metric(log, prefix + '_epsilon', np.mean(self.epsilons), total_steps)                
+                # second row
+                log_metric(log, prefix + 'Q_avg', avg_Q, total_steps)
+                log_metric(log, prefix + 'Q_first', first_Q, total_steps)
+                if steps < self.env.timestep_limit:
+                    log_metric(log, prefix + 'Q_last', last_Q, total_steps)
+                # third row
+                log_metric(log, prefix + 'dQ_arms', rms_dQ, total_steps)
+                log_metric(log, prefix + 'dQ_first', first_dQ, total_steps)
+                log_metric(log, prefix + 'dQ_last', last_dQ, total_steps)
+                
+                log_metric(log, 'monitor/z_episodes', self.episode, total_steps)
+                log_metric(log, 'monitor/z_fps', fps, total_steps)
 
                 if self.episode == 1:
                     for (p, v) in agent.get_parameters().items():
