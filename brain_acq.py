@@ -253,9 +253,6 @@ class BrainACQ:
 
             cum_reward = cum_reward * self.gamma + reward
 
-            if random.random() < 0.01:
-                print(action, states_q[i], states_p[i])
-
             x[i] = state
             y_value[i] = np.copy(states_q[i])
             y_value[i][action] = cum_reward

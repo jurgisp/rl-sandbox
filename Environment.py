@@ -12,8 +12,8 @@ from gym import envs
 
 import tensorflow as tf
 
-# TODO: how to define LOG_DIR so that it's global?
-#LOG_DIR = None
+#LOG_DIR = 'C:/_Data/tensorboard'
+LOG_DIR = '/Users/jurgis/tensorboard/latest'
 
 def log_metric(log, name, value, step=0):
     summary = tf.Summary(value=[tf.Summary.Value(tag=name, simple_value=value)])
@@ -54,7 +54,16 @@ class Environment:
         env = gym.make(problem)
         env.seed(random.randint(1, 999))
         self.state_size = env.observation_space.shape[0]
-        self.action_size = env.action_space.n
+        if type(env.action_space) == gym.spaces.discrete.Discrete:
+            self.action_size = env.action_space.n
+            self.action_continuous = False
+        elif type(env.action_space) == gym.spaces.box.Box:
+            self.action_size = env.action_space.shape[0]
+            self.action_continuous = True
+            if not ((env.action_space.high == 1.).all() and (env.action_space.low == -1.).all()):
+                raise Exception('Expecting continuous action in range (-1.,1.)')
+        else:
+            raise Exception('Unkown action space type')
         self.timestep_limit = env.spec.timestep_limit
         # How much reward assume we keep getting per step if we get cutoff by timestep_limit
         self.cutoff_reward = self._get_cutoff_reward(env) * repeat_steps
