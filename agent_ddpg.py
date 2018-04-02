@@ -14,7 +14,8 @@ class AgentDDPG:
                  env,
                  brain,
                  train_nsteps=1,
-                 noise_sigma=0.2):
+                 noise_sigma=0.2,
+                 noise_dt=1e-2):
 
         self.parameters = ['noise_sigma', 'train_nsteps']
         self.state_size = env.state_size
@@ -24,7 +25,8 @@ class AgentDDPG:
         self.noise_sigma = noise_sigma
         self.noise = OrnsteinUhlenbeckActionNoise(
             mu=np.zeros(self.action_size), 
-            sigma=float(self.noise_sigma) * np.ones(self.action_size))
+            sigma=float(self.noise_sigma) * np.ones(self.action_size),
+            dt=noise_dt)
 
         self.memory = [] # Keeps short experience sequence of train_nsteps
 

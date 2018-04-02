@@ -9,6 +9,7 @@ from keras.models import Sequential, Model
 from keras.layers import Input, Dense
 from keras.optimizers import Adam, RMSprop
 from keras.backend.common import floatx, epsilon
+from keras.initializers import RandomUniform
 import tensorflow as tf
 
 class BrainDDPG:
@@ -23,6 +24,7 @@ class BrainDDPG:
                  opt_critic_lr=1e-3,
                  opt_actor='Adam',
                  opt_actor_lr=1e-3,
+                 opt_init_scale=3e-3,
                  batch_size=32,
                  #
                  use_replay=True,
@@ -43,6 +45,7 @@ class BrainDDPG:
         self.opt_critic_lr = opt_critic_lr
         self.opt_actor = opt_actor
         self.opt_actor_lr = opt_actor_lr
+        self.opt_init_scale = opt_init_scale
         self.batch_size = batch_size
 
         self.use_replay = use_replay
@@ -71,16 +74,18 @@ class BrainDDPG:
         Returns:
             (actor, critic, actor_critic)
         """
-        def minimize(y_true, y_pred):
-            return keras.backend.mean(y_pred, axis=-1)
+        def maximize(y_true, y_pred):
+            return keras.backend.mean(-y_pred, axis=-1)
 
         actor_layer1 = Dense(self.layer1_size, activation='relu')
         actor_layer2 = Dense(self.layer2_size, activation='relu')
-        actor_layer3 = Dense(self.action_size, activation='tanh')
+        actor_layer3 = Dense(self.action_size, activation='tanh',
+                             kernel_initializer=RandomUniform(minval=-self.opt_init_scale, maxval=self.opt_init_scale, seed=None))
 
         critic_layer1 = Dense(self.layer1_size, activation='relu')
         critic_layer2 = Dense(self.layer2_size, activation='relu')
-        critic_layer3 = Dense(1, activation='linear')
+        critic_layer3 = Dense(1, activation='linear',
+                              kernel_initializer=RandomUniform(minval=-self.opt_init_scale, maxval=self.opt_init_scale, seed=None))
 
         # Actor model - only for action, not training
         actor_input_state = Input(shape=(self.state_size,))
@@ -116,7 +121,7 @@ class BrainDDPG:
                     critic_layer1(critic_input_state),
                     critic_input_action])))
         actor_critic_model = Model([actor_input_state], [critic_output])
-        actor_critic_model.compile(loss=minimize,
+        actor_critic_model.compile(loss=maximize,
                                    optimizer=self._optimizer(self.opt_actor, self.opt_actor_lr))
 
         return (actor_model, critic_model, actor_critic_model)

@@ -6,6 +6,7 @@ import numpy as np
 import os
 import threading
 import json
+import warnings
 
 import gym
 from gym import envs
@@ -61,7 +62,7 @@ class Environment:
             self.action_size = env.action_space.shape[0]
             self.action_continuous = True
             if not ((env.action_space.high == 1.).all() and (env.action_space.low == -1.).all()):
-                raise Exception('Expecting continuous action in range (-1.,1.)')
+                warnings.warn('Expecting action range (-1,1), found: %s - %s' % (env.action_space.low, env.action_space.high))
         else:
             raise Exception('Unkown action space type')
         self.timestep_limit = env.spec.timestep_limit
@@ -92,8 +93,6 @@ class Environment:
     def close(self):
         if self.log:
             self.log.close()
-        if self._last_env:
-            self._last_env.close()
 
     def log_summary(self, summary_file):
         if summary_file is not None and self.episode.val() > 0:
@@ -185,10 +184,7 @@ class Environment:
             metrics.observe_step(step, done, reward, reward_plus, value, eps)
 
             state = next_state
-
-        if render:
-            env.close()
-
+            
         self._return_available_env(env)
         self.episode_rewards.append(metrics.total_reward)
         metrics.log_episode_finish(self.log, step, next_state is not None, explore, log_tensorboard, log_print)
